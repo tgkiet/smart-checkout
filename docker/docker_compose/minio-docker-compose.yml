@@ -1,0 +1,19 @@
+services:
+  ssc-minio:
+    image: minio/minio:latest
+    container_name: ssc-minio
+    ports:
+      - "9200:9000"
+      - "9201:9001"
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=adminpass
+    command: server /data --console-address ":9001"
+    volumes:
+      - ../../data/minio-volumes:/data
+    networks:
+      - smart-checkout-networks
+
+networks:
+  smart-checkout-networks:
+    external: true
