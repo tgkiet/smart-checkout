@@ -12,8 +12,8 @@ SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)-8s | %(message)s')
 
-CREDENTIALS_PATH = "/home/qk/Documents/QUOCKHANH/smart-checkout/config/credentials.json"
-TOKEN_PATH = "/home/qk/Documents/QUOCKHANH/smart-checkout/config/token.json"
+CREDENTIALS_PATH = "/home/quockhanh/smart-checkout/config/credentials.json"
+TOKEN_PATH = "/home/quockhanh/smart-checkout/config/token.json"
 
 class GDriveCollector:    
     def __init__(self, credentials_path=CREDENTIALS_PATH, token_path=TOKEN_PATH):

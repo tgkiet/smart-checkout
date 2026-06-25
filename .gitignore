@@ -226,3 +226,4 @@ config/credentials.json
 
 config/
 data/
+logs/

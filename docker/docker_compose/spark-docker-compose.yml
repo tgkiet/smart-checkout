@@ -12,6 +12,8 @@ services:
     ports:
       - "8980:8080"  # Spark Master Web UI
       - "7977:7077"  # Spark Master RPC port
+    volumes:
+      - ../../:/app
     networks:
       - smart-checkout-networks
 
@@ -31,6 +33,8 @@ services:
       - ssc-spark-master
     ports:
       - "8982:8081"  # Spark Worker Web UI
+    volumes:
+      - ../../:/app
     networks:
       - smart-checkout-networks
 

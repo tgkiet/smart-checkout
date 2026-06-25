@@ -10,8 +10,8 @@ from googleapiclient.http import MediaIoBaseDownload
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)-8s | %(message)s')
 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
-CREDENTIALS_PATH = "/home/qk/Documents/QUOCKHANH/smart-checkout/config/credentials.json"
-TOKEN_PATH = "/home/qk/Documents/QUOCKHANH/smart-checkout/config/token.json"
+CREDENTIALS_PATH = "/home/quockhanh/smart-checkout/config/credentials.json"
+TOKEN_PATH = "/home/quockhanh/smart-checkout/config/token.json"
 
 class GDriveHandler:   
     def __init__(self, credentials_path=CREDENTIALS_PATH, token_path=TOKEN_PATH):
