@@ -1,0 +1,103 @@
+detection:
+  model_path: "models/yolo11n-seg-custom.pt"
+  confidence_threshold: 0.15
+  iou_threshold: 0.80
+  device: "cuda"
+
+
+embedding:
+  model_name_or_path: "google/siglip2-base-patch16-224"
+  device: "cuda"
+  embedding_dim: 768
+  batch_size: 16
+  model_checkpoint_path: "models/siglip2_arcface_finetuned"
+
+milvus:
+  host: "localhost"
+  port: 19530
+  collection_name: "sku_embeddings"
+  vector_dim: 768
+  index_type: "IVF_FLAT"
+  metric_type: "COSINE"
+  search_params:
+    nprobe: 10
+  min_similarity_threshold: 0.5
+
+fusion:
+  alpha: 0.7
+  beta: 0.3
+  min_similarity_threshold: 0.5
+  confident_similarity_threshold: 0.98
+  knapsack_max_boxes_exact: 8
+  beam_width: 1000
+
+scale:
+  enabled: false
+  type: "mock"
+  mock_noise_std: 5.0
+  serial_port: "/dev/ttyUSB0"
+  baud_rate: 9600
+
+camera:
+  match_threshold: 0.40
+  weight_embedding: 0.60
+  weight_spatial: 0.40
+  cameras:
+    - name: "top"
+      is_primary: true
+      device_id: 0
+      x_scale: 1.0
+      x_offset: 0.0
+      y_scale: 1.0
+      y_offset: 0.0
+    - name: "side_left"
+      is_primary: false
+      device_id: 1
+      x_scale: 0.0
+      x_offset: 0.25
+      y_scale: 1.0
+      y_offset: 0.0
+    - name: "side_right"
+      is_primary: false
+      device_id: 2
+      x_scale: 0.0
+      x_offset: 0.75
+      y_scale: 1.0
+      y_offset: 0.0
+
+data:
+  sku_metadata_path: "data/sku_metadata.json"
+  catalog_dir: "data/catalog"
+  training_dir: "data/training"
+  test_dir: "data/test"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  log_level: "info"
+  cors_origins:
+    - "*"
+  admin_api_key:
+
+# ─── Data Source: MongoDB (product metadata catalog) ───────────────────────────
+mongodb:
+  uri: "mongodb://localhost:27017"
+  database: "smart_checkout"
+  collection: "products"
+  # Field mapping: adjust these if the upstream collection uses different names
+  field_sku_id: "product_id"
+  field_name: "name"
+  field_price: "price"
+  field_weight: "weight_grams"
+  field_category: "category"
+  connect_timeout_ms: 5000
+  server_selection_timeout_ms: 5000
+
+# ─── Data Source: MinIO (product catalog images) ────────────────────────────────
+minio_catalog:
+  endpoint: "localhost:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  secure: false
+  bucket: "products-images"
+  connect_timeout: 10

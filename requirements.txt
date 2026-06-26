@@ -1,0 +1,46 @@
+# Core AI
+ultralytics>=8.3.0
+transformers>=4.46.0
+torch>=2.4.0
+torchvision>=0.19.0
+
+# Vector Database
+pymilvus>=2.4.0
+
+# API
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+
+# Image Processing
+opencv-python-headless>=4.10.0
+numpy>=1.26.0
+Pillow>=10.0.0
+
+# Config & Validation
+pydantic>=2.9.0
+pydantic-settings>=2.5.0
+pyyaml>=6.0.2
+
+# Logging
+structlog>=24.0.0
+
+# Scale Hardware
+pyserial>=3.5
+
+# Metric Learning
+pytorch-metric-learning>=2.7.0
+
+# Training Utilities
+tensorboard>=2.18.0
+
+# CLI
+typer>=0.12.0
+rich>=13.9.0
+
+# HTTP Client (for health checks, etc.)
+httpx>=0.27.0
+
+# Data Source Connectors (bulk ingestion from MongoDB + MinIO)
+pymongo>=4.8.0
+minio>=7.2.0
