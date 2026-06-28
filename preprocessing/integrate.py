@@ -47,6 +47,12 @@ class DataIntegrator:
         else:
             cleaning_state_col = lit("UNKNOWN").cast("string")
 
+        # Giữ lại minio_image_path nếu có, để query được ảnh từ MinIO sau này
+        if "minio_image_path" in df.columns:
+            minio_path_col = col("minio_image_path").cast("string")
+        else:
+            minio_path_col = lit(None).cast("string")
+
         # Select và alias các cột theo schema chuẩn (Giữ lại image_data để Transform)
         integrated_df = df.select(
             product_id_col.alias("product_id"),
@@ -55,6 +61,7 @@ class DataIntegrator:
             name_col.cast("string").alias("name"),
             col("price").cast("double").alias("price"),
             col("image_data"),
+            minio_path_col.alias("minio_image_path"),
             cleaning_state_col.alias("cleaning_state"),
             lit("SUCCESS").cast("string").alias("integrate_state")
         )
@@ -64,10 +71,12 @@ class DataIntegrator:
     def save_to_mongodb(self, df: DataFrame, database: str, collection: str):
         """
         Lưu dữ liệu vào collection mới trong MongoDB.
+        Giữ lại minio_image_path để có thể query ảnh từ MinIO sau này.
         """
         uri = self.config.get("mongo_uri")
         logger.info(f"----- Lưu dữ liệu đã integrate vào MongoDB: {database}.{collection} -----")
         
+        # Bỏ binary image_data nhưng GIỮ LẠI minio_image_path để query
         df_to_save = df.drop("image_data")
         
         df_to_save.write.format("mongodb") \
@@ -76,3 +85,4 @@ class DataIntegrator:
             .option("spark.mongodb.write.database", database) \
             .option("spark.mongodb.write.collection", collection) \
             .save()
+        logger.info(f"Lưu thành công vào {database}.{collection} (giữ minio_image_path để query)")

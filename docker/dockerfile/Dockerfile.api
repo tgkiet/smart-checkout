@@ -1,0 +1,24 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Cài đặt system dependencies cho OpenCV, mô hình và healthcheck
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy file requirements và cài đặt (do context là thư mục gốc nên đường dẫn trực tiếp)
+COPY requirements_api.txt .
+RUN pip install --no-cache-dir -r requirements_api.txt
+
+# Copy source code từ thư mục processing (bao gồm utils và api_server.py)
+COPY processing/utils/ /app/utils/
+COPY processing/api_server.py /app/
+
+# Port chạy FastAPI
+EXPOSE 8800
+
+# Khởi chạy server API bằng uvicorn
+CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8800", "--workers", "1"]

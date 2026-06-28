@@ -1,0 +1,15 @@
+services:
+  ssc-qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ssc-qdrant
+    ports:
+      - "6433:6333"
+      - "6434:6334"
+    volumes:
+      - ../../data/qdrant-volumes:/qdrant/storage
+    networks:
+      - smart-checkout-networks
+
+networks:
+  smart-checkout-networks:
+    external: true

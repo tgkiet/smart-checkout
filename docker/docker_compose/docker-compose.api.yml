@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  inference-api:
+    build:
+      context: ../../
+      dockerfile: docker/dockerfile/Dockerfile.api
+    image: smart-checkout-inference-api:latest
+    container_name: inference_api_server
+    ports:
+      - "8800:8800"
+    volumes:
+      - ../../processing/utils:/app/utils
+      - ../../processing/api_server.py:/app/api_server.py
+    # Bỏ comment cụm dưới đây nếu bạn có GPU và muốn dùng cho tốc độ cực cao
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8800/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - smart-checkout-networks
+
+networks:
+  smart-checkout-networks:
+    external: true

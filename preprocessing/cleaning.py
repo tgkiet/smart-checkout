@@ -126,9 +126,15 @@ class DataCleaner:
         df_cleaned_images = df_cleaned_metadata.withColumn("cleaning_result", clean_img_udf(col("image_data")))
         
         # Cập nhật lại cột ảnh bằng ảnh đã xử lý và thêm state
+        # Giữ lại cột path_column gốc để query được sau này
         df_final = df_cleaned_images.withColumn("image_data", col("cleaning_result.image_data")) \
                                     .withColumn("cleaning_state", col("cleaning_result.state")) \
                                     .drop("cleaning_result")
+        
+        # Đảm bảo cột path gốc (minio_image_path) có mặt trong schema dưới tên chuẩn
+        if path_column != "minio_image_path" and path_column in df_final.columns:
+            from pyspark.sql.functions import col as _col
+            df_final = df_final.withColumn("minio_image_path", _col(path_column))
         
         return df_final
 
@@ -136,10 +142,14 @@ class DataCleaner:
         """
         Lưu dữ liệu vào collection mới trong MongoDB.
         Chỉ lưu metadata, bỏ cột image_data binary.
+        Giữ lại minio_image_path để có thể query ảnh từ MinIO sau này.
         """
+        import logging
+        _logger = logging.getLogger(self.__class__.__name__)
         uri = self.config.get("mongo_uri")
-        print(f"----- Lưu dữ liệu đã làm sạch vào MongoDB: {database}.{collection} -----")
+        _logger.info(f"----- Lưu dữ liệu đã làm sạch vào MongoDB: {database}.{collection} -----")
         
+        # Bỏ binary image_data nhưng GIỮ LẠI minio_image_path để query
         df_to_save = df.drop("image_data")
         
         df_to_save.write.format("mongodb") \
@@ -148,3 +158,4 @@ class DataCleaner:
             .option("spark.mongodb.write.database", database) \
             .option("spark.mongodb.write.collection", collection) \
             .save()
+        _logger.info(f"Lưu thành công vào {database}.{collection} (giữ minio_image_path để query)")

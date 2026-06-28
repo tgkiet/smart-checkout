@@ -95,22 +95,26 @@ class DataTransformer:
                                  
         # Gom các biến state thành một cột cấu trúc (struct) metadata
         from pyspark.sql.functions import struct
-        df_final = df_final.withColumn("metadata", struct(
+        df_final = df_final.withColumn("pipeline_state", struct(
             col("cleaning_state"),
             col("integrate_state"),
             col("transform_state")
         )).drop("cleaning_state", "integrate_state", "transform_state")
         
+        # Giữ lại minio_image_path của ảnh gốc (sau khi transform) để query
+        # Đồng thời lưu riêng minio_transform_path để có thể phân biệt với ảnh gốc
         logger.info("Hoàn tất chuyển nền ảnh sang trắng!")
         return df_final
 
     def save_to_mongodb(self, df: DataFrame, database: str, collection: str):
         """
         Lưu dữ liệu vào collection mới trong MongoDB.
+        Giữ lại minio_image_path và minio_transform_path để có thể query ảnh từ MinIO sau này.
         """
         uri = self.config.get("mongo_uri")
         logger.info(f"----- Lưu dữ liệu đã transform vào MongoDB: {database}.{collection} -----")
         
+        # Bỏ binary image_data nhưng GIỮ LẠI các path để query ảnh sau này
         df_to_save = df.drop("image_data")
         
         df_to_save.write.format("mongodb") \
@@ -119,3 +123,4 @@ class DataTransformer:
             .option("spark.mongodb.write.database", database) \
             .option("spark.mongodb.write.collection", collection) \
             .save()
+        logger.info(f"Lưu thành công vào {database}.{collection} (giữ đường dẫn MinIO để query)")

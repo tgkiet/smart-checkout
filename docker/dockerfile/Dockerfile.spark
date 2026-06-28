@@ -1,0 +1,13 @@
+FROM apache/spark:latest
+
+# Chuyển sang quyền root để cài đặt thư viện hệ thống
+USER root
+
+# Copy file requirements từ máy host vào container
+COPY requirements.txt /opt/requirements.txt
+
+# Cài đặt thư viện Python (đã bao gồm opencv-python-headless)
+RUN pip install --no-cache-dir -r /opt/requirements.txt
+
+# Chuyển lại user mặc định của Spark để đảm bảo bảo mật
+USER 185

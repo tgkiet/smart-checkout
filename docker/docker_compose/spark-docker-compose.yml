@@ -1,6 +1,9 @@
 services:
   ssc-spark-master:
-    image: apache/spark:latest
+    build:
+      context: ../../
+      dockerfile: docker/dockerfile/Dockerfile.spark
+    image: smart-checkout-spark:latest
     container_name: ssc-spark-master
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     environment:
@@ -18,7 +21,10 @@ services:
       - smart-checkout-networks
 
   ssc-spark-worker:
-    image: apache/spark:latest
+    build:
+      context: ../../
+      dockerfile: docker/dockerfile/Dockerfile.spark
+    image: smart-checkout-spark:latest
     container_name: ssc-spark-worker
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://ssc-spark-master:7077
     environment:

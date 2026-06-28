@@ -84,9 +84,13 @@ def run_pipeline(spark: SparkSession, config: dict):
 
 def upload_images_to_minio(df, step_name, config):
     """
-    Sử dụng foreachPartition để upload ảnh lên MinIO bằng nhiều thread song song (Optimize).
-    Tránh việc upload tuần tự từng dòng (chậm).
+    Sử dụng mapPartitions để upload ảnh lên MinIO song song.
+    Trả về DataFrame đã được bổ sung cột `minio_{step_name}_path` chứa path MinIO mới.
+    Cho phép query ảnh đã qua từng bước xử lý từ MinIO sau này.
     """
+    from pyspark.sql import SparkSession
+    from pyspark.sql.types import StructType, StructField, StringType
+    
     minio_endpoint = config.get("minio_endpoint", "ssc-minio:9000")
     access_key = config.get("minio_access_key", "admin")
     secret_key = config.get("minio_secret_key", "adminpass")
@@ -135,13 +139,36 @@ def upload_images_to_minio(df, step_name, config):
                     length=len(img_bytes),
                     content_type="image/jpeg"
                 )
+                # Trả về (prod_id, path) để join lại vào DataFrame
+                minio_path = f"s3://{bucket_name}/{object_name}"
+                yield (prod_id, minio_path)
             except Exception as e:
                 # Bỏ qua lỗi cục bộ của 1 tấm ảnh
                 pass
 
+    spark = SparkSession.getActiveSession()
+    path_col_name = f"minio_{step_name}_path"
+    
     logger.info(f"Đang đẩy luồng ảnh nhị phân của bước [{step_name}] lên MinIO...")
-    df.foreachPartition(process_partition)
+    
+    # Thực hiện upload và thu thập các path đã upload thành công
+    path_schema = StructType([
+        StructField("product_id", StringType(), True),
+        StructField(path_col_name, StringType(), True)
+    ])
+    rdd_paths = df.rdd.mapPartitions(process_partition)
+    df_paths = spark.createDataFrame(rdd_paths, schema=path_schema)
+    
+    # Join path mới vào DataFrame gốc theo product_id
+    if "product_id" in df.columns:
+        df_enriched = df.join(df_paths, on="product_id", how="left")
+    else:
+        # Nếu không có product_id, thêm cột path rỗng
+        from pyspark.sql.functions import lit
+        df_enriched = df.withColumn(path_col_name, lit(None).cast("string"))
+    
     logger.info(f"Hoàn tất đẩy ảnh bước [{step_name}] lên MinIO!")
+    return df_enriched
 
 def main():
     """
@@ -185,13 +212,17 @@ def main():
         
         # Ở các bước có instance lưu trữ (clean, integrate, transform), tiến hành lưu ở cả 2 nơi
         if step_name in ["clean", "integrate", "transform"]:
-            # 1. Đẩy ảnh binary (đang nằm trong DataFrame) thẳng lên MinIO
-            upload_images_to_minio(current_df, step_name, config)
+            # 1. Đẩy ảnh binary lên MinIO → nhận về DataFrame đã có thêm cột minio_<step>_path
+            df_with_path = upload_images_to_minio(current_df, step_name, config)
+            df_with_path.cache()
             
-            # 2. Lưu metadata (không bao gồm ảnh binary) xuống MongoDB
+            # 2. Lưu metadata (kèm minio path, không bao gồm ảnh binary) xuống MongoDB
+            # => Document trong MongoDB sẽ có trường minio_<step>_path để query ảnh sau này
             if module_instance and hasattr(module_instance, 'save_to_mongodb'):
                 collection_name = "cleaning" if step_name == "clean" else ("integrated" if step_name == "integrate" else "transformed")
-                module_instance.save_to_mongodb(current_df, "preprocessing", collection_name)
+                module_instance.save_to_mongodb(df_with_path, "preprocessing", collection_name)
+            
+            df_with_path.unpersist()
                 
         if step_name == "transform":
             logger.info("HOÀN TẤT TOÀN BỘ PIPELINE THỬ NGHIỆM!")
