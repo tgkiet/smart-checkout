@@ -20,14 +20,14 @@ milvus:
   index_type: "IVF_FLAT"
   metric_type: "COSINE"
   search_params:
-    nprobe: 10
-  min_similarity_threshold: 0.5
+    nprobe: 32        # Scan 32/128 clusters for significantly better recall
+  min_similarity_threshold: 0.60  # Raised from 0.5 to cut noisy candidates
 
 fusion:
-  alpha: 0.7
-  beta: 0.3
-  min_similarity_threshold: 0.5
-  confident_similarity_threshold: 0.98
+  alpha: 1.0        # Vision-only: full weight on vision score
+  beta: 0.0         # No weight penalty when scale is disabled
+  min_similarity_threshold: 0.60   # Synced with Milvus threshold
+  confident_similarity_threshold: 0.88  # Lowered: auto-assign fires more often
   knapsack_max_boxes_exact: 8
   beam_width: 1000
 
