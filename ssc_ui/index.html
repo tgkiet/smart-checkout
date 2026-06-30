@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Checkout</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <!-- Modulerized CSS -->
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <h1>Smart Checkout</h1>
+            <p>Seamlessly scan and identify your items</p>
+        </header>
+        
+        <main class="main-content">
+            <div class="upload-section glass-panel">
+                <div class="upload-area" id="drop-zone">
+                    <input type="file" id="file-input" accept="image/*" hidden>
+                    <div class="upload-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    </div>
+                    <p>Drag & Drop your product image here</p>
+                    <span>or</span>
+                    <button id="browse-btn" class="btn primary-btn">Browse Files</button>
+                </div>
+                
+                <div class="preview-area hidden" id="preview-section">
+                    <img id="image-preview" src="" alt="Product Preview">
+                    <div class="action-buttons">
+                        <button id="reselect-btn" class="btn secondary-btn">Reselect</button>
+                        <button id="checkout-btn" class="btn primary-btn">Process Checkout</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="results-section glass-panel hidden" id="results-section">
+                <h2>Cart Summary</h2>
+                <div id="loading-spinner" class="hidden">
+                    <div class="spinner"></div>
+                    <p>Analyzing image...</p>
+                </div>
+                
+                <div id="items-list" class="items-list">
+                    <!-- Items will be injected here -->
+                </div>
+                
+                <div class="total-section">
+                    <span>Total</span>
+                    <span id="total-price" class="price">$0.00</span>
+                </div>
+                <button class="btn checkout-btn" id="pay-btn" disabled>Pay Now</button>
+            </div>
+        </main>
+    </div>
+    
+    <!-- ES6 Module Entry Point -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
