@@ -31,22 +31,33 @@ async def process_checkout(image: UploadFile = File(...)):
         total_price = 0.0
         
         # 2. Xử lý từng detection
-        for det in detections:
+        print(f"DEBUG: Found {len(detections)} detections from segmentation")
+        for i, det in enumerate(detections):
             # Crop/Mask
             cropped = process_detection(pil_img, img_np, det)
                 
             # 3. Gọi API Embedding
             embedding = InferenceService.embed(cropped)
             if not embedding:
+                print(f"DEBUG: Detection {i} failed to get embedding")
                 continue
                 
             # 4. Search Qdrant
-            matches = vector_db.search(embedding, limit=1, threshold=0.6)
+            # Temporary lower threshold to 0.1 to debug similarity scores
+            matches = vector_db.search(embedding, limit=3, threshold=0.1)
+            print(f"DEBUG: Detection {i} returned {len(matches)} matches from Qdrant")
             
             if matches:
+                # Print out scores of top matches to see how far off it is
+                for j, match in enumerate(matches):
+                    print(f"  -> Match {j}: score={match['score']:.4f}, name={match['name']}")
+                
                 best_match = matches[0]
-                items.append(best_match)
-                total_price += best_match["price"]
+                if best_match['score'] > 0.6:
+                    items.append(best_match)
+                    total_price += best_match["price"]
+                else:
+                    print(f"DEBUG: Best match score {best_match['score']:.4f} is lower than 0.6 threshold")
                     
         return {
             "items": items,
