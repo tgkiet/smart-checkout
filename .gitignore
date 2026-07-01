@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+ssc_data_lake/
+.venv/
+data/
+
+config/token.json
+config/credentials.json
+
+config/
+data/
+logs/

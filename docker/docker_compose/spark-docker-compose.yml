@@ -1,0 +1,49 @@
+services:
+  ssc-spark-master:
+    build:
+      context: ../../
+      dockerfile: docker/dockerfile/Dockerfile.spark
+    image: smart-checkout-spark:latest
+    container_name: ssc-spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      - SPARK_LOCAL_IP=ssc-spark-master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8980:8080"  # Spark Master Web UI
+      - "7977:7077"  # Spark Master RPC port
+    volumes:
+      - ../../:/app
+    networks:
+      - smart-checkout-networks
+
+  ssc-spark-worker:
+    build:
+      context: ../../
+      dockerfile: docker/dockerfile/Dockerfile.spark
+    image: smart-checkout-spark:latest
+    container_name: ssc-spark-worker
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://ssc-spark-master:7077
+    environment:
+      - SPARK_MASTER=spark://ssc-spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=4
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    depends_on:
+      - ssc-spark-master
+    ports:
+      - "8982:8081"  # Spark Worker Web UI
+    volumes:
+      - ../../:/app
+    networks:
+      - smart-checkout-networks
+
+networks:
+  smart-checkout-networks:
+    external: true

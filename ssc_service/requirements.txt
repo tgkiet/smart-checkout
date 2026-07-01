@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+python-multipart
+qdrant-client==1.17.0
+requests
+Pillow
+numpy
