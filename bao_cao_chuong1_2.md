@@ -449,34 +449,37 @@ Cấu trúc lưu trữ MinIO trong VSSCS theo từng giai đoạn của pipeline
 
 ```mermaid
 graph TB
-    subgraph DOCKER["Docker Compose Network — VSSCS"]
+    USER(["Người dùng"])
 
-        subgraph DATA_INFRA["Data Infrastructure"]
-            MONGO_C["ssc-mongo\nMongoDB :27017"]
-            MINIO_C["ssc-minio\nMinIO :9000 API / :9001 Console"]
-            QDRANT_C["ssc-qdrant\nQdrant :6333"]
-        end
-
-        subgraph SPARK_CLUSTER["Apache Spark Cluster"]
-            SM["ssc-spark-master\nSpark Master :7077"]
-            SW["ssc-spark-worker\nSpark Worker"]
-            SM --> SW
-        end
-
-        subgraph APP_SERVICES["Application Services"]
-            INF_API["inference-api\nFastAPI :8800\nYOLO + CLIP Models"]
-            SSC_SVC["ssc-service\nFastAPI :8000\nCheckout API"]
-            SSC_UI["ssc-ui\nWeb Interface"]
-        end
-
-        SSC_UI -->|"HTTP"| SSC_SVC
-        SSC_SVC -->|"POST /segment\nPOST /embed"| INF_API
-        SSC_SVC -->|"ANN Search"| QDRANT_C
-
-        SM -->|"Read/Write"| MONGO_C
-        SM -->|"Read/Write"| MINIO_C
-        SM -->|"Upsert"| QDRANT_C
+    subgraph FRONTEND["Frontend"]
+        UI["ssc-ui\nSSC UI"]
     end
+
+    subgraph APP["Application Services"]
+        SVC["ssc-service\nCheckout API :8000"]
+        INF["inference_api_server\nInference API :8800"]
+    end
+
+    subgraph SPARK["Spark Cluster"]
+        SM["ssc-spark-master\n:7977 RPC | :8980 UI"]
+        SW["ssc-spark-worker\n2G RAM | 4 Cores"]
+        SM --> SW
+    end
+
+    subgraph DATA["Data Infrastructure"]
+        MONGO["ssc-mongo\nMongoDB :27917"]
+        MINIO["ssc-minio\nMinIO :9200 | :9201"]
+        QD["ssc-qdrant\nQdrant :6433 | :6434"]
+    end
+
+    USER --> UI
+    UI -->|"POST /checkout/"| SVC
+    SVC -->|"POST /api/v1/segment\nPOST /api/v1/embed"| INF
+    SVC -->|"ANN Search"| QD
+
+    SM -->|"Spark Connector"| MONGO
+    SM -->|"S3 API"| MINIO
+    SM -->|"Upsert vectors"| QD
 ```
 
 Trong thiết kế mở rộng của hệ thống, Apache Kafka được dự trù đóng vai trò là **Message Queue** đặt giữa các Spark job xử lý batch và các inference worker, cho phép bổ sung thêm GPU worker theo chiều ngang (horizontal scaling) mà không cần thay đổi kiến trúc tổng thể của hệ thống.
@@ -488,22 +491,22 @@ sequenceDiagram
     participant UI as SSC UI
     participant SVC as SSC Service :8000
     participant INF as Inference API :8800
-    participant QD as Qdrant
+    participant QD as Qdrant :6433
 
     UI->>SVC: POST /checkout/ (image file)
     SVC->>INF: POST /api/v1/segment (image bytes)
-    INF-->>SVC: [{bbox, confidence, class_id, mask_base64}]
+    INF-->>SVC: {"detections": [{bbox, confidence, class_id, mask_base64}]}
 
     loop Mỗi detection
-        SVC->>SVC: Crop ảnh (áp mask / dùng bbox fallback)
+        SVC->>SVC: Crop ảnh theo bbox + áp mask (hoặc bbox fallback)
         SVC->>INF: POST /api/v1/embed (cropped image)
-        INF-->>SVC: {embedding: [512-dim vector]}
-        SVC->>QD: search(query_vector, top=3)
+        INF-->>SVC: {"embedding": [512-dim vector]}
+        SVC->>QD: search(vector, limit=3)
         QD-->>SVC: [{name, price, sku, score}]
-        SVC->>SVC: Lọc: score ≥ 0.6 → đưa vào giỏ hàng
+        SVC->>SVC: Lọc best_match: score > 0.6 → thêm vào items
     end
 
-    SVC-->>UI: {items: [...], total_price: float}
+    SVC-->>UI: {items: [...], total_price: float, message: "Thành công"}
 ```
 
 ---
