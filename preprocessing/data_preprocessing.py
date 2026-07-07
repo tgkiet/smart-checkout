@@ -114,6 +114,9 @@ def upload_images_to_minio(df, step_name, config):
             try:
                 # Kiểm tra xem có cột image_data không
                 if "image_data" not in row or not row.image_data:
+                    row_dict = row.asDict()
+                    row_dict[f"minio_{step_name}_path"] = None
+                    yield row_dict
                     continue
                 img_bytes = row.image_data
                 
@@ -139,10 +142,15 @@ def upload_images_to_minio(df, step_name, config):
                     length=len(img_bytes),
                     content_type="image/jpeg"
                 )
-                # Trả về (prod_id, path) để join lại vào DataFrame
-                minio_path = f"s3://{bucket_name}/{object_name}"
-                yield (prod_id, minio_path)
+                # Trả về toàn bộ dòng dữ liệu kèm cột mới
+                row_dict = row.asDict()
+                row_dict[f"minio_{step_name}_path"] = f"s3://{bucket_name}/{object_name}"
+                yield row_dict
             except Exception as e:
+                # Nếu lỗi, trả về dòng gốc với cột mới là rỗng
+                row_dict = row.asDict()
+                row_dict[f"minio_{step_name}_path"] = None
+                yield row_dict
                 # Bỏ qua lỗi cục bộ của 1 tấm ảnh
                 pass
 
@@ -151,30 +159,21 @@ def upload_images_to_minio(df, step_name, config):
     
     logger.info(f"Đang đẩy luồng ảnh nhị phân của bước [{step_name}] lên MinIO...")
     
-    # Thực hiện upload và thu thập các path đã upload thành công
-    path_schema = StructType([
-        StructField("product_id", StringType(), True),
-        StructField(path_col_name, StringType(), True)
-    ])
-    rdd_paths = df.rdd.mapPartitions(process_partition)
-    df_paths = spark.createDataFrame(rdd_paths, schema=path_schema)
+    # Tạo schema mới bao gồm các cột cũ + cột minio path
+    from pyspark.sql.types import StringType, StructField
+    new_schema = df.schema.add(StructField(path_col_name, StringType(), True))
     
-    # Join path mới vào DataFrame gốc theo product_id
-    if "product_id" in df.columns:
-        df_enriched = df.join(df_paths, on="product_id", how="left")
-    else:
-        # Nếu không có product_id, thêm cột path rỗng
-        from pyspark.sql.functions import lit
-        df_enriched = df.withColumn(path_col_name, lit(None).cast("string"))
+    rdd_paths = df.rdd.mapPartitions(process_partition)
+    df_enriched = spark.createDataFrame(rdd_paths, schema=new_schema)
     
     logger.info(f"Hoàn tất đẩy ảnh bước [{step_name}] lên MinIO!")
     return df_enriched
 
-def main():
+def main(external_spark=None, external_config=None, input_df=None):
     """
     Điểm khởi chạy Spark Pipeline cho tiền xử lý dữ liệu.
     """
-    spark = SparkSession.builder \
+    spark = external_spark or SparkSession.builder \
         .appName("SmartCheckout_DataPreprocessing") \
         .config("spark.jars.packages", "org.mongodb.spark:mongo-spark-connector_2.13:10.4.0") \
         .getOrCreate()
@@ -186,7 +185,7 @@ def main():
     spark.sparkContext.addPyFile(os.path.join(base_dir, "integrate.py"))
     spark.sparkContext.addPyFile(os.path.join(base_dir, "transform.py"))
         
-    config = {
+    config = external_config or {
         "mongo_uri": "mongodb://root:rootpass@ssc-mongo:27017/?authSource=admin",
         "mongo_db": "smart_checkout",
         "mongo_collection": "products", # Thay bằng tên collection thực tế
@@ -196,8 +195,22 @@ def main():
         "minio_secret_key": "adminpass"
     }
     
+    # Nếu truyền input_df (từ unified_pipeline), bỏ qua extract
+    if input_df is not None:
+        def chunk_pipeline():
+            df_cleaned, cleaner = process_clean(input_df, config)
+            yield "clean", df_cleaned, cleaner
+            df_integrated, integrator = process_integrate(df_cleaned, config)
+            yield "integrate", df_integrated, integrator
+            df_transformed, transformer = process_transform(df_integrated, config)
+            yield "transform", df_transformed, transformer
+        pipeline_generator = chunk_pipeline()
+    else:
+        pipeline_generator = run_pipeline(spark, config)
+    
+    last_df = None
     # Duyệt qua từng bước trong pipeline generator
-    for step_name, current_df, module_instance in run_pipeline(spark, config):
+    for step_name, current_df, module_instance in pipeline_generator:
         logger.info(f"===== ĐANG XỬ LÝ BƯỚC: {step_name.upper()} =====")
         
         # [QUAN TRỌNG ĐỂ TỐI ƯU TỐC ĐỘ]
@@ -222,10 +235,13 @@ def main():
                 collection_name = "cleaning" if step_name == "clean" else ("integrated" if step_name == "integrate" else "transformed")
                 module_instance.save_to_mongodb(df_with_path, "preprocessing", collection_name)
             
-            df_with_path.unpersist()
+            last_df = df_with_path
+            current_df.unpersist()
                 
         if step_name == "transform":
             logger.info("HOÀN TẤT TOÀN BỘ PIPELINE THỬ NGHIỆM!")
+            
+    return last_df
 
 if __name__ == "__main__":
     main()

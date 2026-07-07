@@ -69,3 +69,47 @@ graph TD
     
     T ===>|Dữ liệu chuẩn bị cho Processing| NEXT((Sang Processing))
 ```
+
+### Chi Tiết Hoạt Động Của Từng Giai Đoạn (Forward Flow)
+
+Dưới đây là luồng xử lý tuần tự (forward flow) đi sâu vào các bước thực thi bên trong từng giai đoạn `Clean`, `Integrate`, và `Transform`:
+
+```mermaid
+flowchart LR
+    Start([Dữ Liệu Thô Extract]) --> C1
+    
+    subgraph CLEANING [2. CLEANING]
+        direction LR
+        C1(Kiểm tra ảnh thiếu & sai định dạng) --> C2(Loại bỏ bản ghi lỗi)
+        C2 --> C3(Upload ảnh nhị phân:<br/>MinIO clean/)
+        C3 --> C4(Lưu Metadata:<br/>DB cleaning)
+        C4 --> C5(Cache DataFrame)
+    end
+    
+    C5 --> I1
+    
+    subgraph INTEGRATE [3. INTEGRATE]
+        direction LR
+        I1(Chuẩn hóa Schema) --> I2(Chuyển đổi & Gom nhóm nguồn)
+        I2 --> I3(Upload ảnh nhị phân:<br/>MinIO integrate/)
+        I3 --> I4(Lưu Metadata:<br/>DB integrated)
+        I4 --> I5(Cache DataFrame)
+    end
+    
+    I5 --> T1
+    
+    subgraph TRANSFORM [4. TRANSFORM]
+        direction LR
+        T1(Can thiệp trực tiếp pixel) --> T2(Tẩy trắng nền &<br/>Chuẩn hóa độ sáng/màu)
+        T2 --> T3(Upload ảnh nhị phân:<br/>MinIO transform/)
+        T3 --> T4(Lưu Metadata:<br/>DB transformed)
+        T4 --> T5(Cache DataFrame)
+    end
+    
+    T5 --> Done([Dữ liệu Sạch<br/>sẵn sàng Processing])
+    
+    classDef default fill:#fff,stroke:#333,stroke-width:1px;
+    classDef subgraphStyle fill:#f0f8ff,stroke:#007acc,stroke-width:2px,stroke-dasharray: 5 5;
+    class CLEANING,INTEGRATE,TRANSFORM subgraphStyle;
+```
+

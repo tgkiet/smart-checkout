@@ -95,6 +95,10 @@ def process_objects_partition(iterator, config):
     """
     from object_processor import ObjectProcessor
     import concurrent.futures
+    import uuid
+
+    batch_id = str(uuid.uuid4())[:8]
+    print(f"[DEBUG-BATCH] ==> Bắt đầu xử lý batch (partition) {batch_id}")
 
     processor = ObjectProcessor(config)
 
@@ -102,13 +106,17 @@ def process_objects_partition(iterator, config):
         row_dict = row.asDict()
         return processor.process(row_dict, conf_threshold=0.5)
 
+    item_count = 0
     # Chạy song song tối đa 2 luồng / partition để không làm chết ngộp API Server (nếu không có GPU mạnh)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         for records in executor.map(process_row, iterator):
             for rec in records:
+                item_count += 1
                 # Chuyển embedding list[float] sang tuple để Spark nhận được
                 rec["embedding"] = list(rec["embedding"])
                 yield rec
+
+    print(f"[DEBUG-BATCH] ==> Hoàn thành batch {batch_id}. Tổng số items trong batch này: {item_count}")
 
 
 # ---------------------------------------------------------------------------
@@ -239,8 +247,9 @@ def ensure_qdrant_collection(config, embedding_dim=512):
 # Tiện ích: zip thư mục utils để Spark worker import được
 # ---------------------------------------------------------------------------
 def create_utils_zip():
+    import uuid
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    zip_path = "/tmp/utils.zip"
+    zip_path = f"/tmp/utils_{uuid.uuid4().hex}.zip"
     utils_dir = os.path.join(base_dir, "utils")
     if os.path.exists(utils_dir):
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
@@ -255,13 +264,13 @@ def create_utils_zip():
 # ---------------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------------
-def main():
+def main(external_spark=None, external_config=None, input_df=None):
     logger.info("=" * 60)
     logger.info("  BẮT ĐẦU PROCESSING PIPELINE")
     logger.info("  Luồng: img → segment → object → embedding → metadata → Qdrant")
     logger.info("=" * 60)
 
-    spark = (
+    spark = external_spark or (
         SparkSession.builder.appName("SmartCheckout_Processing")
         .config(
             "spark.jars.packages",
@@ -279,7 +288,7 @@ def main():
         spark.sparkContext.addPyFile(utils_zip)
 
     # --- Config ---
-    config = {
+    config = external_config or {
         "mongo_uri": "mongodb://root:rootpass@ssc-mongo:27017/?authSource=admin",
         "minio_endpoint": "ssc-minio:9000",
         "minio_access_key": "admin",
@@ -292,22 +301,30 @@ def main():
     }
 
     # -----------------------------------------------------------------------
-    # BƯỚC 1: Đọc dữ liệu đã qua bước Transform từ MongoDB preprocessing
+    # BƯỚC 1: Đọc dữ liệu đã qua bước Transform từ MongoDB preprocessing (hoặc từ input_df)
     # -----------------------------------------------------------------------
-    logger.info("[1/5] Đọc dữ liệu từ preprocessing.transformed...")
-    df_transformed = (
-        spark.read.format("mongodb")
-        .option("spark.mongodb.read.connection.uri", config["mongo_uri"])
-        .option("spark.mongodb.read.database", "preprocessing")
-        .option("spark.mongodb.read.collection", "transformed")
-        .load()
-    )
+    if input_df is not None:
+        logger.info("[1/5] Nhận dữ liệu chunk từ unified pipeline...")
+        df_transformed = input_df
+    else:
+        logger.info("[1/5] Đọc dữ liệu từ preprocessing.transformed...")
+        df_transformed = (
+            spark.read.format("mongodb")
+            .option("spark.mongodb.read.connection.uri", config["mongo_uri"])
+            .option("spark.mongodb.read.database", "preprocessing")
+            .option("spark.mongodb.read.collection", "transformed")
+            .option("spark.mongodb.read.partitioner", "com.mongodb.spark.sql.connector.read.partitioner.PaginateBySizePartitioner")
+            .option("spark.mongodb.read.partitionerOptions.partitionSizeMB", "32")
+            .load()
+        )
 
-    # Giới hạn để test (tăng lên hoặc bỏ .limit() khi production)
-    df_transformed = df_transformed.repartition(
-        spark.sparkContext.defaultParallelism or 4
-    )
-    logger.info(f"  Số lượng ảnh đầu vào: {df_transformed.count()}")
+        # Giới hạn để test (tăng lên hoặc bỏ .limit() khi production)
+        df_transformed = df_transformed.repartition(8)
+    
+    num_partitions = df_transformed.rdd.getNumPartitions()
+    total_count = df_transformed.count()
+    logger.info(f"  Số lượng ảnh đầu vào: {total_count}")
+    logger.info(f"  [DEBUG-BATCH] Dữ liệu đã được chia thành {num_partitions} batches (partitions) để chạy song song!")
 
     # -----------------------------------------------------------------------
     # BƯỚC 2+3+4: Segment → Object → Embedding → Assign Metadata
@@ -382,7 +399,8 @@ def main():
     logger.info("=" * 60)
     logger.info("  HOÀN TẤT PROCESSING PIPELINE")
     logger.info("=" * 60)
-    spark.stop()
+    if external_spark is None:
+        spark.stop()
 
 
 if __name__ == "__main__":

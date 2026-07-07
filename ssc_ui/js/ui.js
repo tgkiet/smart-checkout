@@ -8,7 +8,6 @@ export function renderItems(itemsListEl, items) {
         itemEl.innerHTML = `
             <div class="item-info">
                 <span class="item-name">${item.name}</span>
-                <span class="item-sku">SKU: ${item.sku || 'N/A'}</span>
             </div>
             <div class="item-price">$${item.price.toFixed(2)}</div>
         `;

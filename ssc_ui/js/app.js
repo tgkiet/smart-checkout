@@ -1,5 +1,5 @@
-import { processCheckout } from './api.js';
-import { renderItems } from './ui.js';
+import { processCheckout } from './api.js?v=2';
+import { renderItems } from './ui.js?v=2';
 
 document.addEventListener('DOMContentLoaded', () => {
     const dropZone = document.getElementById('drop-zone');

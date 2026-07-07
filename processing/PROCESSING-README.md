@@ -44,3 +44,30 @@ graph TD
     M -->|6b. Lưu Thông tin Lịch sử| MONGO
     M -->|6c. Batch Push Vector & Payload| QDRANT
 ```
+
+### Chi tiết Bước Segmentation & Crop (Phân vùng & Cắt Sản Phẩm)
+
+Sơ đồ này mô tả chi tiết logic tách sản phẩm độc lập khỏi ảnh gốc trong file `object_processor.py`. Hệ thống ưu tiên sử dụng Mask để loại bỏ phông nền, giúp mô hình Embedding tiếp theo không bị nhiễu bởi hậu cảnh. Hỗ trợ chạy linh hoạt qua mô hình cục bộ (Local Mode) hoặc qua API (API Mode).
+
+```mermaid
+graph LR
+    A[Ảnh Gốc từ<br>MinIO/RAM] --> B[Đưa ảnh qua<br>mô hình YOLOv8-seg]
+    B --> C[Trích xuất Bbox,<br>Conf & Mask]
+    C --> D[Resize Mask<br>khớp với ảnh gốc]
+    D --> E[Tách nền: Xóa<br>pixel ngoài Mask]
+    E --> F[Crop ảnh theo<br>Bounding Box]
+    F --> G[Lọc 1 Object có<br>Conf cao nhất]
+    G --> H[Output: Ảnh Sản Phẩm<br>đã Cropped]
+```
+
+### Chi tiết Bước Embedding (Mã hóa Đặc trưng Vector)
+
+Sơ đồ dưới đây trình bày luồng xử lý nhận ảnh sản phẩm (đã được cắt) và mã hóa thành một vector nhiều chiều (để phục vụ cho Similarity Search trên Qdrant). Tương tự, bước này cũng có thể chạy qua API độc lập hoặc sử dụng CLIP/ResNet cục bộ.
+
+```mermaid
+graph LR
+    A[Ảnh Sản Phẩm<br>Cropped] --> B[Chuyển đổi ảnh<br>sang JPEG Bytes]
+    B --> C[Đưa qua mô hình<br>CLIP/ResNet]
+    C --> D[Tính toán và trích<br>xuất mảng Vector]
+    D --> E[Output:<br>Embedding Vector 512d]
+```

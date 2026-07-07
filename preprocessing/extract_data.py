@@ -14,7 +14,7 @@ class DataExtractor:
         """
         mongo_uri = self.config.get("mongo_uri", "mongodb://root:rootpass@ssc-mongo:27017/?authSource=admin")
         database = self.config.get("mongo_db", "smart_checkout")
-        collection = self.config.get("mongo_collection", "raw_data")
+        collection = self.config.get("mongo_collection", "products")
         
         # Bỏ qua trường 'ld_json' do dữ liệu không đồng nhất gây lỗi parse schema
         pipeline = "[{'$project': {'ld_json': 0}}]"
@@ -24,6 +24,8 @@ class DataExtractor:
             .option("spark.mongodb.read.database", database) \
             .option("spark.mongodb.read.collection", collection) \
             .option("spark.mongodb.read.aggregation.pipeline", pipeline) \
+            .option("spark.mongodb.read.partitioner", "com.mongodb.spark.sql.connector.read.partitioner.PaginateBySizePartitioner") \
+            .option("spark.mongodb.read.partitionerOptions.partitionSizeMB", "32") \
             .load()
         
         return df
@@ -49,7 +51,8 @@ class DataExtractor:
                 )
                 
                 # Format path thường lưu theo dạng "bucket_name/object_name"
-                parts = path.split('/', 1)
+                clean_path = path.replace("s3://", "").replace("s3a://", "").strip()
+                parts = clean_path.split('/', 1)
                 if len(parts) != 2:
                     return None
                 
