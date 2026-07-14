@@ -84,6 +84,7 @@ class DataTransformer:
             return df
             
         bg_removal_udf = self.get_bg_removal_udf()
+        logger.info("Đã tạo UDF loại bỏ phông nền, bắt đầu áp dụng lên DataFrame.")
         
         # Thêm/Cập nhật cột ảnh với ảnh nền trắng và sinh ra state
         df_transformed = df.withColumn("transform_result", bg_removal_udf(col("image_data")))

@@ -10,9 +10,9 @@ os.makedirs("logs", exist_ok=True)
 # Cấu hình logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     handlers=[
-        logging.FileHandler("logs/data_preprocessing.log"),
+        logging.FileHandler("logs/data_preprocessing.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
 )

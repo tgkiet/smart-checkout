@@ -113,15 +113,21 @@ class DataCleaner:
         """
         Đóng gói tiến trình làm sạch dữ liệu.
         """
+        import logging
+        _logger = logging.getLogger(self.__class__.__name__)
+        _logger.info("Bắt đầu quy trình process_clean_data (Làm sạch metadata & ảnh).")
         path_column = self.config.get("path_column", "minio_image_path")
         
         # 1. Làm sạch Metadata
+        _logger.info(f"  > Bước 1: Làm sạch metadata với cột path: {path_column}")
         df_cleaned_metadata = self.clean_metadata(df, path_column)
         
         # Lọc bỏ những dòng không lấy được ảnh ở bước extract
+        _logger.info("  > Loại bỏ các dòng bị NULL image_data sau Extract...")
         df_cleaned_metadata = df_cleaned_metadata.filter(col("image_data").isNotNull())
         
         # 2. Làm sạch Ảnh
+        _logger.info("  > Bước 2: Bắt đầu áp dụng UDF làm sạch ảnh (xử lý nhiễu, mờ, sáng).")
         clean_img_udf = self.get_image_cleaning_udf()
         df_cleaned_images = df_cleaned_metadata.withColumn("cleaning_result", clean_img_udf(col("image_data")))
         
@@ -136,6 +142,7 @@ class DataCleaner:
             from pyspark.sql.functions import col as _col
             df_final = df_final.withColumn("minio_image_path", _col(path_column))
         
+        _logger.info("Hoàn thành quá trình định nghĩa biến đổi ảnh (Clean).")
         return df_final
 
     def save_to_mongodb(self, df: DataFrame, database: str, collection: str):

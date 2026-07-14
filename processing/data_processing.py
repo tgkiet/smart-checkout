@@ -37,9 +37,9 @@ from pyspark.sql.types import (
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     handlers=[
-        logging.FileHandler("logs/processing_pipeline.log"),
+        logging.FileHandler("logs/processing_pipeline.log", encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
@@ -98,13 +98,16 @@ def process_objects_partition(iterator, config):
     import uuid
 
     batch_id = str(uuid.uuid4())[:8]
-    print(f"[DEBUG-BATCH] ==> Bắt đầu xử lý batch (partition) {batch_id}")
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
+    part_logger = logging.getLogger("worker_process_objects")
+    part_logger.info(f"[DEBUG-BATCH] ==> Bắt đầu xử lý batch (partition) {batch_id}")
 
     processor = ObjectProcessor(config)
 
     def process_row(row):
         row_dict = row.asDict()
-        return processor.process(row_dict, conf_threshold=0.5)
+        return processor.process(row_dict, conf_threshold=0.25)
 
     item_count = 0
     # Chạy song song tối đa 2 luồng / partition để không làm chết ngộp API Server (nếu không có GPU mạnh)
@@ -116,7 +119,7 @@ def process_objects_partition(iterator, config):
                 rec["embedding"] = list(rec["embedding"])
                 yield rec
 
-    print(f"[DEBUG-BATCH] ==> Hoàn thành batch {batch_id}. Tổng số items trong batch này: {item_count}")
+    part_logger.info(f"[DEBUG-BATCH] ==> Hoàn thành batch {batch_id}. Tổng số items trong batch này: {item_count}")
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +131,11 @@ def upload_objects_to_minio_partition(iterator, config):
     Đường dẫn: processing/objects/<sku>/<sub_id>.jpg
     Trả về dict metadata (không còn binary) kèm minio_object_path.
     """
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
+    part_logger = logging.getLogger("worker_minio_upload")
+    part_logger.info("[DEBUG-BATCH] ==> Bắt đầu quá trình upload partition ảnh crop lên MinIO.")
+
     from minio import Minio
 
     client = Minio(
@@ -141,10 +149,13 @@ def upload_objects_to_minio_partition(iterator, config):
     try:
         if not client.bucket_exists(bucket_name):
             client.make_bucket(bucket_name)
-    except Exception:
+    except Exception as e:
+        part_logger.warning(f"[DEBUG-BATCH] Không thể tạo bucket, lý do: {e}")
         pass
 
+    item_count = 0
     for row in iterator:
+        item_count += 1
         row_dict = row.asDict()
         cropped_bytes = row_dict.pop("cropped_image_data", None)
         sub_id = row_dict.get("sub_id", "unknown")
@@ -168,6 +179,8 @@ def upload_objects_to_minio_partition(iterator, config):
         row_dict["minio_object_path"] = minio_object_path
         yield row_dict
 
+    part_logger.info(f"[DEBUG-BATCH] ==> Hoàn tất upload partition lên MinIO. Tổng số object xử lý: {item_count}")
+
 
 # ---------------------------------------------------------------------------
 # foreachPartition: Push vector lên Qdrant
@@ -179,6 +192,11 @@ def push_to_qdrant_partition(iterator, config):
       - vector   : embedding
       - payload  : toàn bộ metadata (sku, name, price, paths, bbox…)
     """
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
+    part_logger = logging.getLogger("worker_qdrant_push")
+    part_logger.info("[DEBUG-BATCH] ==> Bắt đầu push vector lên Qdrant cho partition này.")
+
     from qdrant_client import QdrantClient
     from qdrant_client.models import PointStruct
 
@@ -188,8 +206,11 @@ def push_to_qdrant_partition(iterator, config):
 
     client = QdrantClient(host=host, port=port)
     batch = []
+    batch_count = 0
+    item_count = 0
 
     for row in iterator:
+        item_count += 1
         row_dict = row.asDict()
         embedding = row_dict.get("embedding")
         if not embedding:
@@ -206,17 +227,19 @@ def push_to_qdrant_partition(iterator, config):
         if len(batch) >= 64:
             try:
                 client.upsert(collection_name=collection, points=batch)
+                batch_count += 1
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).error(f"Lỗi khi push Qdrant batch 64: {e}")
+                part_logger.error(f"Lỗi khi push Qdrant batch 64: {e}")
             batch = []
 
     if batch:
         try:
             client.upsert(collection_name=collection, points=batch)
+            batch_count += 1
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Lỗi khi push Qdrant batch cuối: {e}")
+            part_logger.error(f"Lỗi khi push Qdrant batch cuối: {e}")
+
+    part_logger.info(f"[DEBUG-BATCH] ==> Hoàn tất push partition lên Qdrant. Tổng số items: {item_count}, upsert batches: {batch_count}")
 
 
 # ---------------------------------------------------------------------------
@@ -233,14 +256,23 @@ def ensure_qdrant_collection(config, embedding_dim=512):
 
     client = QdrantClient(host=host, port=port)
     existing = [c.name for c in client.get_collections().collections]
+    
+    if collection in existing:
+        col_info = client.get_collection(collection_name=collection)
+        current_dim = col_info.config.params.vectors.size
+        if current_dim != embedding_dim:
+            logger.warning(f"Qdrant collection '{collection}' có dimension {current_dim}, khác với {embedding_dim}. Đang xóa để tạo lại...")
+            client.delete_collection(collection_name=collection)
+            existing.remove(collection)
+        else:
+            logger.info(f"Qdrant collection '{collection}' đã tồn tại và đúng dim={embedding_dim}.")
+
     if collection not in existing:
         client.create_collection(
             collection_name=collection,
             vectors_config=VectorParams(size=embedding_dim, distance=Distance.COSINE),
         )
         logger.info(f"Đã tạo Qdrant collection '{collection}' (dim={embedding_dim})")
-    else:
-        logger.info(f"Qdrant collection '{collection}' đã tồn tại.")
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +353,31 @@ def main(external_spark=None, external_config=None, input_df=None):
         # Giới hạn để test (tăng lên hoặc bỏ .limit() khi production)
         df_transformed = df_transformed.repartition(8)
     
+    # -----------------------------------------------------------------------
+    # BƯỚC 1.5: Lọc các item đã xử lý (Resume capability)
+    # -----------------------------------------------------------------------
+    try:
+        from pyspark.sql.functions import col
+        df_processed = (
+            spark.read.format("mongodb")
+            .option("spark.mongodb.read.connection.uri", config["mongo_uri"])
+            .option("spark.mongodb.read.database", "processing")
+            .option("spark.mongodb.read.collection", "objects")
+            .load()
+        )
+        if "original_id" in df_processed.columns:
+            df_processed_ids = df_processed.select("original_id").distinct()
+            
+            df_transformed = df_transformed.withColumn("_id_str", col("_id").cast("string"))
+            df_transformed = df_transformed.join(
+                df_processed_ids,
+                df_transformed["_id_str"] == df_processed_ids["original_id"],
+                "left_anti"
+            ).drop("_id_str")
+            logger.info("  [Resume] Đã lọc bỏ các ảnh đã xử lý thành công trước đó (bỏ qua để tiếp tục).")
+    except Exception as e:
+        logger.info(f"  [Resume] Không lọc dữ liệu cũ (có thể là lần chạy đầu tiên): {e}")
+
     num_partitions = df_transformed.rdd.getNumPartitions()
     total_count = df_transformed.count()
     logger.info(f"  Số lượng ảnh đầu vào: {total_count}")

@@ -3,22 +3,34 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+import os
+
 class EmbeddingModel:
     """
     Model tạo Embedding vector cho ảnh đã crop.
-    Sử dụng CLIP (openai/clip-vit-base-patch32) nếu có, 
-    fallback sang torchvision ResNet50 nếu không có transformers.
+    Sử dụng CLIP (offline).
     """
-    def __init__(self, model_name="openai/clip-vit-base-patch32"):
+    def __init__(self, model_name=None):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.model_name = model_name
+        # Xử lý đường dẫn model khi chạy trên Spark worker (__file__ bị trỏ vào /tmp)
+        if model_name is None or model_name == "openai/clip-vit-base-patch32":
+            docker_path = "/app/models/clip-vit-base-patch32"
+            local_path = "/home/quockhanh/smart-checkout/models/clip-vit-base-patch32"
+            if os.path.exists(docker_path):
+                self.model_name = docker_path
+            elif os.path.exists(local_path):
+                self.model_name = local_path
+            else:
+                self.model_name = "openai/clip-vit-base-patch32"
+        else:
+            self.model_name = model_name
+
         self._model = None
         self._processor = None
         self._backend = None
         self._load_model()
 
     def _load_model(self):
-        # Thử CLIP trước (độ chính xác cao hơn cho ảnh sản phẩm)
         try:
             from transformers import CLIPProcessor, CLIPModel
             import torch
@@ -28,32 +40,10 @@ class EmbeddingModel:
             self._model.eval()
             self._backend = "clip"
             self.logger.info("Tải CLIP model thành công.")
-        except ImportError:
-            self.logger.warning("transformers chưa cài, fallback sang torchvision ResNet50...")
-            self._load_resnet()
         except Exception as e:
-            self.logger.error(f"Lỗi tải CLIP: {e}. Fallback sang ResNet50...")
-            self._load_resnet()
-
-    def _load_resnet(self):
-        try:
-            import torch
-            import torchvision.models as models
-            import torchvision.transforms as T
-            self._model = models.resnet50(pretrained=True)
-            # Bỏ lớp FC cuối để lấy feature vector 2048-dim
-            self._model = torch.nn.Sequential(*list(self._model.children())[:-1])
-            self._model.eval()
-            self._transform = T.Compose([
-                T.Resize((224, 224)),
-                T.ToTensor(),
-                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ])
-            self._backend = "resnet"
-            self.logger.info("Tải ResNet50 thành công.")
-        except Exception as e:
-            self.logger.error(f"Không thể tải EmbeddingModel: {e}")
+            self.logger.error(f"Lỗi tải CLIP: {e}")
             self._backend = None
+            raise e
 
     def embed(self, image: Image.Image) -> list:
         """
@@ -64,18 +54,22 @@ class EmbeddingModel:
             return []
         try:
             import torch
-            if self._backend == "clip":
-                inputs = self._processor(images=image, return_tensors="pt", padding=True)
-                with torch.no_grad():
-                    features = self._model.get_image_features(**inputs)
-                # L2 normalize để dùng cosine similarity trong Qdrant
-                features = features / features.norm(dim=-1, keepdim=True)
-                return features[0].tolist()
-            elif self._backend == "resnet":
-                tensor = self._transform(image).unsqueeze(0)
-                with torch.no_grad():
-                    features = self._model(tensor)
-                return features.squeeze().tolist()
+            inputs = self._processor(images=image, return_tensors="pt", padding=True)
+            with torch.no_grad():
+                features = self._model.get_image_features(**inputs)
+            
+            # Transformers >= 5.x có thể trả về BaseModelOutputWithPooling thay vì Tensor
+            if not isinstance(features, torch.Tensor):
+                if hasattr(features, 'pooler_output'):
+                    features = features.pooler_output
+                elif hasattr(features, 'image_embeds'):
+                    features = features.image_embeds
+                elif isinstance(features, tuple):
+                    features = features[0]
+
+            # L2 normalize để dùng cosine similarity trong Qdrant
+            features = features / features.norm(dim=-1, keepdim=True)
+            return features[0].tolist()
         except Exception as e:
             self.logger.error(f"Lỗi tạo embedding: {e}")
             return []

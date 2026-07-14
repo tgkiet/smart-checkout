@@ -82,6 +82,31 @@ class DataExtractor:
         # 1. Đọc Dataframe từ MongoDB
         mongo_df = self.get_mongo_source()
         
+        # --- THÊM LOGIC RESUME (ANTI-JOIN) ĐỂ CHECKPOINT PIPELINE ---
+        try:
+            df_processed = (
+                self.spark.read.format("mongodb")
+                .option("spark.mongodb.read.connection.uri", self.config.get("mongo_uri", "mongodb://root:rootpass@ssc-mongo:27017/?authSource=admin"))
+                .option("spark.mongodb.read.database", "preprocessing")
+                .option("spark.mongodb.read.collection", "transformed")
+                .load()
+            )
+            if "_id" in df_processed.columns:
+                df_processed_ids = df_processed.select("_id").withColumnRenamed("_id", "processed_id").distinct()
+                mongo_df = mongo_df.withColumn("_id_str", col("_id").cast("string"))
+                df_processed_ids = df_processed_ids.withColumn("processed_id_str", col("processed_id").cast("string"))
+                mongo_df = mongo_df.join(
+                    df_processed_ids,
+                    mongo_df["_id_str"] == df_processed_ids["processed_id_str"],
+                    "left_anti"
+                ).drop("_id_str")
+                import logging
+                logging.getLogger(__name__).info("  [Resume] Đã lọc bỏ các dữ liệu đã tồn tại trong preprocessing.transformed.")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).info(f"  [Resume] Không lọc dữ liệu cũ (có thể là lần chạy đầu tiên): {e}")
+        # -------------------------------------------------------------
+
         # Nếu có yêu cầu limit (dùng cho test), thực hiện limit NGAY TẠI ĐÂY
         if limit_rows:
             mongo_df = mongo_df.limit(limit_rows)

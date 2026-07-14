@@ -227,3 +227,8 @@ config/credentials.json
 config/
 data/
 logs/
+
+# PyTorch / YOLO / Safetensors models
+*.pt
+*.safetensors
+models/

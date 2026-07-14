@@ -14,14 +14,14 @@ class VectorDBService:
             raise Exception("Qdrant client not initialized")
             
         try:
-            results = self.client.search(
+            results = self.client.query_points(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=embedding,
+                query=embedding,
                 limit=limit
             )
             
             valid_results = []
-            for match in results:
+            for match in results.points:
                 if match.score > threshold:
                     valid_results.append({
                         "name": match.payload.get("name", "Unknown Product"),

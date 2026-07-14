@@ -1,33 +1,75 @@
-export async function processCheckout(imageFile) {
-    // Return mock data for UI development
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve({
-                items: [
-                    { name: "Organic Bananas", sku: "FRU-001", price: 2.99, quantity: 1, subtotal: 2.99 },
-                    { name: "Whole Milk 1L", sku: "DAI-042", price: 3.49, quantity: 2, subtotal: 6.98 },
-                    { name: "Sourdough Bread", sku: "BAK-019", price: 4.50, quantity: 1, subtotal: 4.50 },
-                    { name: "Coca Cola 330ml", sku: "BEV-099", price: 1.25, quantity: 3, subtotal: 3.75 }
-                ],
-                total_price: 18.22
-            });
-        }, 1500); // 1.5s delay to simulate network request and see the loading spinner
-    });
+/**
+ * api.js — Centralized API client for ssc_service
+ * Base URL is configurable via window.SSC_API_BASE (set before this module is loaded)
+ */
 
-    /* 
-    // Original API Call
-    const formData = new FormData();
-    formData.append('image', imageFile);
+export const BASE_URL = window.SSC_API_BASE || "";
 
-    const response = await fetch('http://localhost:8100/checkout/', {
-        method: 'POST',
-        body: formData
-    });
-
-    if (!response.ok) {
-        throw new Error('Network response was not ok: ' + response.statusText);
+async function request(method, path, body = null, isFormData = false) {
+    const opts = {
+        method,
+        headers: isFormData ? {} : { "Content-Type": "application/json" },
+        body: body
+            ? isFormData ? body : JSON.stringify(body)
+            : undefined,
+    };
+    const res = await fetch(`${BASE_URL}${path}`, opts);
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
     }
-
-    return await response.json();
-    */
+    return res.json();
 }
+
+// ── Sessions ──────────────────────────────────────────────────────────────
+
+/** Tạo phiên mới */
+export const createSession = () => request("POST", "/sessions/");
+
+/** Lấy chi tiết phiên (danh sách ảnh, status) */
+export const getSession = (sessionId) => request("GET", `/sessions/${sessionId}`);
+
+/** Xóa phiên */
+export const deleteSession = (sessionId) => request("DELETE", `/sessions/${sessionId}`);
+
+// ── Images ────────────────────────────────────────────────────────────────
+
+/**
+ * Upload nhiều ảnh vào phiên.
+ * @param {string} sessionId
+ * @param {File[]} files
+ */
+export async function uploadImages(sessionId, files) {
+    const form = new FormData();
+    for (const f of files) form.append("files", f);
+    return request("POST", `/sessions/${sessionId}/images`, form, true);
+}
+
+/**
+ * Xóa 1 ảnh khỏi phiên.
+ */
+export const deleteImage = (sessionId, imageId) =>
+    request("DELETE", `/sessions/${sessionId}/images/${imageId}`);
+
+// ── Checkout ──────────────────────────────────────────────────────────────
+
+/**
+ * Checkout tất cả ảnh PENDING trong phiên (song song phía backend).
+ */
+export const checkoutAll = (sessionId) =>
+    request("POST", `/sessions/${sessionId}/checkout`);
+
+/**
+ * Checkout 1 ảnh cụ thể.
+ */
+export const checkoutOne = (sessionId, imageId) =>
+    request("POST", `/sessions/${sessionId}/checkout/${imageId}`);
+
+// ── Cart ──────────────────────────────────────────────────────────────────
+
+/** Lấy giỏ hàng + tổng tiền */
+export const getCart = (sessionId) => request("GET", `/sessions/${sessionId}/cart`);
+
+/** Xác nhận thanh toán */
+export const confirmCheckout = (sessionId) =>
+    request("POST", `/sessions/${sessionId}/confirm`);

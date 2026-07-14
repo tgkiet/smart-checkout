@@ -53,6 +53,18 @@ class ObjectProcessor:
 
             # Khởi tạo 1 lần duy nhất trên mỗi partition/worker
             self.seg_model = SegmentationModel(model_path=seg_model)
+            
+            # Khởi động (warmup) mô hình Segmentation trên luồng chính 
+            # để tránh race condition (lỗi AttributeError: 'Conv' object has no attribute 'bn') 
+            # khi Ultralytics thực hiện fuse() layer dưới môi trường đa luồng.
+            try:
+                self.logger.info("Đang thực hiện warmup mô hình Segmentation...")
+                dummy_img = Image.new('RGB', (640, 640), color='white')
+                self.seg_model.predict(dummy_img, conf_threshold=0.5)
+                self.logger.info("Warmup mô hình Segmentation thành công.")
+            except Exception as e:
+                self.logger.warning(f"Có lỗi khi warmup mô hình Segmentation: {e}")
+                
             self.emb_model = EmbeddingModel(model_name=emb_model)
 
     # ------------------------------------------------------------------
@@ -257,8 +269,14 @@ class ObjectProcessor:
         # Bước 1 + 2: Segment & Crop
         objects = self.segment_and_crop(image, conf_threshold=conf_threshold, image_bytes=image_bytes)
         if not objects:
-            self.logger.debug(f"Không phát hiện object nào trong {original_id}")
-            return []
+            self.logger.debug(f"Không phát hiện object nào trong {original_id}. Fallback: sử dụng toàn bộ ảnh gốc.")
+            objects.append({
+                "bbox": [0.0, 0.0, float(image.width), float(image.height)],
+                "confidence": 0.0,
+                "class_id": -1,
+                "cropped_image": image.copy(),
+                "mask_applied": False,
+            })
 
         records = []
         

@@ -13,9 +13,10 @@ class DataIntegrator:
         Chuẩn hóa schema dữ liệu về định dạng duy nhất.
         Schema: product_id, platform, sku, name, price
         """
-        logger.info("Bắt đầu chuẩn hóa schema dữ liệu...")
+        logger.info("Bắt đầu chuẩn hóa schema dữ liệu (Integrate)...")
         
         # Xử lý các cột name hoặc title
+        logger.info("  > Mapping cột 'name' và 'title'...")
         if "title" in df.columns and "name" in df.columns:
             name_col = coalesce(col("name"), col("title"))
         elif "title" in df.columns:
@@ -66,6 +67,7 @@ class DataIntegrator:
             lit("SUCCESS").cast("string").alias("integrate_state")
         )
         
+        logger.info("Hoàn thành quá trình định nghĩa chuẩn hóa schema.")
         return integrated_df
 
     def save_to_mongodb(self, df: DataFrame, database: str, collection: str):
